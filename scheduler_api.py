@@ -52,15 +52,22 @@ def fire_webhook(message_id: str, webhook_url: str, payload: Dict[str, Any]):
         response = requests.post(webhook_url, json=payload, timeout=30)
         response.raise_for_status()
         print(f"[{datetime.now().isoformat()}] Webhook fired successfully for message {message_id}")
-    except Exception as e:
-        print(f"[{datetime.now().isoformat()}] Failed to fire webhook for message {message_id}: {e}")
-    finally:
-        # Clean up Redis and timer tracking
+        
+        # Only clean up if webhook was successful
         redis_client.delete(f"message:{message_id}")
         with timer_lock:
             if message_id in active_timers:
                 del active_timers[message_id]
         print(f"[{datetime.now().isoformat()}] Message {message_id} cleaned from Redis and timer tracking")
+        
+    except Exception as e:
+        print(f"[{datetime.now().isoformat()}] Failed to fire webhook for message {message_id}: {e}")
+        print(f"[{datetime.now().isoformat()}] Message {message_id} kept in Redis for potential retry")
+        
+        # Only remove from active timers (since timer already executed), but keep in Redis
+        with timer_lock:
+            if message_id in active_timers:
+                del active_timers[message_id]
 
 def parse_schedule_time(schedule_timestamp: str) -> datetime:
     """Parse schedule timestamp and handle different formats"""
